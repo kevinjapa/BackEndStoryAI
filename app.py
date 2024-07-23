@@ -6,6 +6,10 @@ from pydub import AudioSegment
 import requests
 import json
 import openai
+from sqlalchemy import create_engine, Column, Integer, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+Base = declarative_base()
 
 app = Flask(__name__)
 CORS(app)  
@@ -179,6 +183,92 @@ def generate_image():
         return jsonify({'image_url': image_url, 'saved_path': image_path})
 
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Configuración de la base de datos
+DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres'
+# engine = create_engine(DATABASE_URL)
+# Base = declarative_base()
+# Session = sessionmaker(bind=engine)
+# session = Session()
+
+# # Definir el modelo de datos
+# class ChatHistory(Base):
+#     __tablename__ = 'chat_history'
+#     id = Column(Integer, primary_key=True)
+#     question = Column(Text, nullable=False)
+#     answer = Column(Text, nullable=False)
+#     image_url = Column(Text)
+
+# # Crear las tablas en la base de datos
+# Base.metadata.create_all(engine)
+
+# @app.route('/api/save-chat-history', methods=['POST'])
+# def save_chat_history():
+#     data = request.get_json()
+#     if not data or 'chatHistory' not in data:
+#         return jsonify({'error': 'No chat history provided'}), 400
+
+#     chat_history = data['chatHistory']
+#     try:
+#         for chat in chat_history:
+#             new_entry = ChatHistory(
+#                 question=chat['question'],
+#                 answer=chat['answer'],
+#                 image_url=chat.get('imageUrl')
+#             )
+#             session.add(new_entry)
+#         session.commit()
+#         return jsonify({'message': 'Chat history saved successfully'}), 200
+#     except Exception as e:
+#         session.rollback()
+#         return jsonify({'error': str(e)}), 500
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
+Session = sessionmaker(bind=engine)
+session = Session()
+
+# Definir el modelo de datos
+class ChatHistory(Base):
+    __tablename__ = 'chat_history'
+    id = Column(Integer, primary_key=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    image_url = Column(Text)
+
+# Crear las tablas en la base de datos
+Base.metadata.create_all(engine)
+
+# Endpoint de prueba de conexión
+@app.route('/api/test-db-connection', methods=['GET'])
+def test_db_connection():
+    try:
+        # Realiza una consulta simple para verificar la conexión
+        result = session.execute("SELECT 1").fetchone()
+        return jsonify({'message': 'Connection successful', 'result': result[0]}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/save-chat-history', methods=['POST'])
+def save_chat_history():
+    data = request.get_json()
+    if not data or 'chatHistory' not in data:
+        return jsonify({'error': 'No chat history provided'}), 400
+
+    chat_history = data['chatHistory']
+    try:
+        for chat in chat_history:
+            new_entry = ChatHistory(
+                question=chat['question'],
+                answer=chat['answer'],
+                image_url=chat.get('imageUrl')
+            )
+            session.add(new_entry)
+        session.commit()
+        return jsonify({'message': 'Chat history saved successfully'}), 200
+    except Exception as e:
+        session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
