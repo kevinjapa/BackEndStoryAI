@@ -224,6 +224,7 @@ DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres'
 #     except Exception as e:
 #         session.rollback()
 #         return jsonify({'error': str(e)}), 500
+
 engine = create_engine(DATABASE_URL)
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
@@ -269,6 +270,15 @@ def save_chat_history():
         return jsonify({'message': 'Chat history saved successfully'}), 200
     except Exception as e:
         session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-chat-history', methods=['GET'])
+def get_chat_history():
+    try:
+        chat_history = session.query(ChatHistory).all()
+        result = [{'question': chat.question, 'answer': chat.answer, 'imageUrl': chat.image_url} for chat in chat_history]
+        return jsonify({'chatHistory': result}), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
