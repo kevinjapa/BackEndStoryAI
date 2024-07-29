@@ -10,24 +10,44 @@ from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 
-
 Base = declarative_base()
 
 app = Flask(__name__)
 CORS(app)  
 
-# Endpoint de prueba de conexión
-@app.route('/api/test-db-connection', methods=['GET'])
-def test_db_connection():
-    try:
-        # Realiza una consulta simple para verificar la conexión
-        result = session.execute("SELECT 1").fetchone()
-        return jsonify({'message': 'Connection successful', 'result': result[0]}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# Configuración de la base de datos
+DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres' # Connexion Base Datos
+aai.settings.api_key = "e5416e4013334ec99cfcdda0e9ba7429"# key Assamble Audio
+api_key = 'sk-None-pZvhT36Lo37E34AZP0ZZT3BlbkFJm5LRgULNtRF4ufYykAXu' # key Api Open AI
+
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
+Session = sessionmaker(bind=engine)
+session = Session()
+
+# Definir el modelo de datos
+# Definimos las tablas para la base de datos y creamos la relacion con el ususario y el chat
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(Text, nullable=False, unique=True)
+    password = Column(Text, nullable=False)
+
+class ChatHistory(Base):
+    __tablename__ = 'chat_history'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    image_url = Column(Text)
+    user = relationship('User', back_populates='chat_history')
+
+User.chat_history = relationship('ChatHistory', order_by=ChatHistory.id, back_populates='user')
+# Crear las tablas en la base de datos
+Base.metadata.create_all(engine)
 
 
-aai.settings.api_key = "e5416e4013334ec99cfcdda0e9ba7429"
+#Api para Audio-Text
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe():
     if 'audio' not in request.files:
@@ -54,6 +74,7 @@ def transcribe():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+#Modelo para generar cuentos con llama(No Usado)
 @app.route('/api/llama3', methods=['POST'])
 def llama3():
     try:
@@ -92,7 +113,7 @@ def llama3():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# generar las historias
+#Generar Historias
 @app.route('/api/chat-gpt', methods=['POST'])
 def chat_gpt():
     try:
@@ -140,11 +161,7 @@ def chat_gpt():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# generar imagenes
-
-# Configura tu clave de API de OpenAI
-api_key = 'sk-None-pZvhT36Lo37E34AZP0ZZT3BlbkFJm5LRgULNtRF4ufYykAXu'
-
+# Generar Imagenes
 # Directorio donde se guardarán las imágenes
 image_directory = '/Users/kevinjapa/Downloads/API Speech Text/imagenes/'
 
@@ -197,39 +214,7 @@ def generate_image():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-# Configuración de la base de datos
-DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres'
-
-engine = create_engine(DATABASE_URL)
-Base = declarative_base()
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Definir el modelo de datos
-# Definimos las tablas para la base de datos y creamos la relacion con el ususario y el chat
-
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    username = Column(Text, nullable=False, unique=True)
-    password = Column(Text, nullable=False)
-
-class ChatHistory(Base):
-    __tablename__ = 'chat_history'
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    question = Column(Text, nullable=False)
-    answer = Column(Text, nullable=False)
-    image_url = Column(Text)
-    user = relationship('User', back_populates='chat_history')
-
-User.chat_history = relationship('ChatHistory', order_by=ChatHistory.id, back_populates='user')
-# Crear las tablas en la base de datos
-Base.metadata.create_all(engine)
-
-
-# End point para registrar el usuario: 
+#Registro de Usuarios
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -246,7 +231,7 @@ def register():
     session.commit()
     return jsonify({'message': 'User registered successfully'}), 201
 
-# end point para el login
+#Login de Usuarios
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -259,36 +244,7 @@ def login():
     else:
         return jsonify({'error': 'Invalid username or password'}), 401
 
-# End point para guar y cargar el historial de chat
-# @app.route('/api/save-chat-history', methods=['POST'])
-# def save_chat_history():
-#     data = request.get_json()
-#     if not data or 'chatHistory' not in data:
-#         return jsonify({'error': 'No chat history provided'}), 400
-
-#     chat_history = data['chatHistory']
-#     try:
-#         for chat in chat_history:
-#             new_entry = ChatHistory(
-#                 question=chat['question'],
-#                 answer=chat['answer'],
-#                 image_url=chat.get('imageUrl')
-#             )
-#             session.add(new_entry)
-#         session.commit()
-#         return jsonify({'message': 'Chat history saved successfully'}), 200
-#     except Exception as e:
-#         session.rollback()
-#         return jsonify({'error': str(e)}), 500
-
-# @app.route('/api/get-chat-history', methods=['GET'])
-# def get_chat_history():
-#     try:
-#         chat_history = session.query(ChatHistory).all()
-#         result = [{'question': chat.question, 'answer': chat.answer, 'imageUrl': chat.image_url} for chat in chat_history]
-#         return jsonify({'chatHistory': result}), 200
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
+#Guardar Historial de Chat
 @app.route('/api/save-chat-history', methods=['POST'])
 def save_chat_history():
     data = request.get_json()
@@ -317,6 +273,7 @@ def save_chat_history():
         session.rollback()
         return jsonify({'error': str(e)}), 500
 
+#Obtener el Chat
 @app.route('/api/get-chat-history', methods=['GET'])
 def get_chat_history():
     user_id = request.args.get('user_id')
