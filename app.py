@@ -6,16 +6,28 @@ from pydub import AudioSegment
 import requests
 import json
 import openai
-from sqlalchemy import create_engine, Column, Integer, Text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from werkzeug.security import generate_password_hash, check_password_hash
+
 
 Base = declarative_base()
 
 app = Flask(__name__)
 CORS(app)  
 
-aai.settings.api_key = "e5416e4013334ec99cfcdda0e9ba7429"
+# Endpoint de prueba de conexión
+@app.route('/api/test-db-connection', methods=['GET'])
+def test_db_connection():
+    try:
+        # Realiza una consulta simple para verificar la conexión
+        result = session.execute("SELECT 1").fetchone()
+        return jsonify({'message': 'Connection successful', 'result': result[0]}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
+
+aai.settings.api_key = "e5416e4013334ec99cfcdda0e9ba7429"
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe():
     if 'audio' not in request.files:
@@ -195,36 +207,105 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 # Definir el modelo de datos
+# Definimos las tablas para la base de datos y creamos la relacion con el ususario y el chat
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(Text, nullable=False, unique=True)
+    password = Column(Text, nullable=False)
+
 class ChatHistory(Base):
     __tablename__ = 'chat_history'
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     image_url = Column(Text)
+    user = relationship('User', back_populates='chat_history')
 
+User.chat_history = relationship('ChatHistory', order_by=ChatHistory.id, back_populates='user')
 # Crear las tablas en la base de datos
 Base.metadata.create_all(engine)
 
-# Endpoint de prueba de conexión
-@app.route('/api/test-db-connection', methods=['GET'])
-def test_db_connection():
-    try:
-        # Realiza una consulta simple para verificar la conexión
-        result = session.execute("SELECT 1").fetchone()
-        return jsonify({'message': 'Connection successful', 'result': result[0]}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
+# End point para registrar el usuario: 
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+
+    hashed_password = generate_password_hash(password)
+    new_user = User(username=username, password=hashed_password)
+
+    session.add(new_user)
+    session.commit()
+    return jsonify({'message': 'User registered successfully'}), 201
+
+# end point para el login
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    user = session.query(User).filter_by(username=username).first()
+    if user and check_password_hash(user.password, password):
+        return jsonify({'message': 'Login successful', 'user_id': user.id}), 200
+    else:
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+# End point para guar y cargar el historial de chat
+# @app.route('/api/save-chat-history', methods=['POST'])
+# def save_chat_history():
+#     data = request.get_json()
+#     if not data or 'chatHistory' not in data:
+#         return jsonify({'error': 'No chat history provided'}), 400
+
+#     chat_history = data['chatHistory']
+#     try:
+#         for chat in chat_history:
+#             new_entry = ChatHistory(
+#                 question=chat['question'],
+#                 answer=chat['answer'],
+#                 image_url=chat.get('imageUrl')
+#             )
+#             session.add(new_entry)
+#         session.commit()
+#         return jsonify({'message': 'Chat history saved successfully'}), 200
+#     except Exception as e:
+#         session.rollback()
+#         return jsonify({'error': str(e)}), 500
+
+# @app.route('/api/get-chat-history', methods=['GET'])
+# def get_chat_history():
+#     try:
+#         chat_history = session.query(ChatHistory).all()
+#         result = [{'question': chat.question, 'answer': chat.answer, 'imageUrl': chat.image_url} for chat in chat_history]
+#         return jsonify({'chatHistory': result}), 200
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
 @app.route('/api/save-chat-history', methods=['POST'])
 def save_chat_history():
     data = request.get_json()
-    if not data or 'chatHistory' not in data:
-        return jsonify({'error': 'No chat history provided'}), 400
+    user_id = data.get('user_id')
+    chat_history = data.get('chatHistory')
 
-    chat_history = data['chatHistory']
+    if not user_id or not chat_history:
+        return jsonify({'error': 'User ID and chat history are required'}), 400
+
+    user = session.query(User).get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
     try:
         for chat in chat_history:
             new_entry = ChatHistory(
+                user_id=user.id,
                 question=chat['question'],
                 answer=chat['answer'],
                 image_url=chat.get('imageUrl')
@@ -238,8 +319,12 @@ def save_chat_history():
 
 @app.route('/api/get-chat-history', methods=['GET'])
 def get_chat_history():
+    user_id = request.args.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User ID is required'}), 400
+
     try:
-        chat_history = session.query(ChatHistory).all()
+        chat_history = session.query(ChatHistory).filter_by(user_id=user_id).all()
         result = [{'question': chat.question, 'answer': chat.answer, 'imageUrl': chat.image_url} for chat in chat_history]
         return jsonify({'chatHistory': result}), 200
     except Exception as e:
