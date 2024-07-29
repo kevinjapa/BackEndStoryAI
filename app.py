@@ -300,3 +300,5 @@ def get_chat_history():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    #ng serve --host 192.168.0.101 --port 4200
+
