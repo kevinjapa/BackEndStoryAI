@@ -188,42 +188,6 @@ def generate_image():
 
 # Configuración de la base de datos
 DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres'
-# engine = create_engine(DATABASE_URL)
-# Base = declarative_base()
-# Session = sessionmaker(bind=engine)
-# session = Session()
-
-# # Definir el modelo de datos
-# class ChatHistory(Base):
-#     __tablename__ = 'chat_history'
-#     id = Column(Integer, primary_key=True)
-#     question = Column(Text, nullable=False)
-#     answer = Column(Text, nullable=False)
-#     image_url = Column(Text)
-
-# # Crear las tablas en la base de datos
-# Base.metadata.create_all(engine)
-
-# @app.route('/api/save-chat-history', methods=['POST'])
-# def save_chat_history():
-#     data = request.get_json()
-#     if not data or 'chatHistory' not in data:
-#         return jsonify({'error': 'No chat history provided'}), 400
-
-#     chat_history = data['chatHistory']
-#     try:
-#         for chat in chat_history:
-#             new_entry = ChatHistory(
-#                 question=chat['question'],
-#                 answer=chat['answer'],
-#                 image_url=chat.get('imageUrl')
-#             )
-#             session.add(new_entry)
-#         session.commit()
-#         return jsonify({'message': 'Chat history saved successfully'}), 200
-#     except Exception as e:
-#         session.rollback()
-#         return jsonify({'error': str(e)}), 500
 
 engine = create_engine(DATABASE_URL)
 Base = declarative_base()
