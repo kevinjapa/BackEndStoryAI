@@ -9,6 +9,7 @@ import openai
 from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask import send_from_directory
 
 Base = declarative_base()
 
@@ -163,8 +164,14 @@ def chat_gpt():
 
 # Generar Imagenes
 # Directorio donde se guardarán las imágenes
-image_directory = '/Users/kevinjapa/Downloads/API Speech Text/imagenes/'
 
+# Obtenemos la Imagen con la ruta del Servidor
+@app.route('/imagenes/<filename>')
+def serve_image(filename):
+    return send_from_directory(image_directory, filename)
+
+# Generamos la Imagen con Dall-E y Guardamos en el Servidor
+image_directory = 'imagenes/'
 # Crear el directorio si no existe
 os.makedirs(image_directory, exist_ok=True)
 
@@ -203,13 +210,16 @@ def generate_image():
         if image_response.status_code != 200:
             return jsonify({'error': 'No se pudo descargar la imagen'}), image_response.status_code
 
-        # Guardar la imagen en el servidor
-        # image_path = os.path.join(image_directory, f"{prompt.replace(' ', '_')}.png")
-        image_path = os.path.join(image_directory, f"hola.png")
+        # Crear un nombre único para la imagen
+        image_id = len(os.listdir(image_directory)) + 1
+        image_path = os.path.join(image_directory, f"image_{image_id}.png")
         with open(image_path, 'wb') as f:
             f.write(image_response.content)
 
-        return jsonify({'image_url': image_url, 'saved_path': image_path})
+        # Devolver la URL de la imagen guardada en el servidor
+        server_image_url = f"http://127.0.0.1:5000/{image_path}"
+
+        return jsonify({'image_url': server_image_url})
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
