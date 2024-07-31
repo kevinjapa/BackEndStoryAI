@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 import assemblyai as aai
+import joblib
+import spacy
 from flask_cors import CORS
 import os
 from pydub import AudioSegment
@@ -10,6 +12,16 @@ from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import send_from_directory
+import nltk
+from nltk.corpus import stopwords
+
+# Configurar stopwords y spaCy
+nltk.download('stopwords')
+stop_words_spanish = stopwords.words('spanish')
+nlp = spacy.load("es_core_news_md")
+
+# Cargar el modelo entrenado
+pipeline = joblib.load('modelo_entrenado.pkl')
 
 Base = declarative_base()
 
@@ -19,7 +31,7 @@ CORS(app)
 # Configuración de la base de datos
 DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/postgres' # Connexion Base Datos
 aai.settings.api_key = "e5416e4013334ec99cfcdda0e9ba7429"# key Assamble Audio
-api_key = 'sk-None-pZvhT36Lo37E34AZP0ZZT3BlbkFJm5LRgULNtRF4ufYykAXu' # key Api Open AI
+api_key = '' # key Api Open AI
 
 engine = create_engine(DATABASE_URL)
 Base = declarative_base()
@@ -47,6 +59,54 @@ User.chat_history = relationship('ChatHistory', order_by=ChatHistory.id, back_po
 # Crear las tablas en la base de datos
 Base.metadata.create_all(engine)
 
+# Función de preprocesamiento
+def preprocess_text(text):
+    doc = nlp(text)
+    lemmatized = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
+    return " ".join(lemmatized)
+
+# Función para generar el prompt basado en las predicciones del modelo
+def generar_prompt_cuento(predicciones):
+    tipo_cuento, personajes, escenario, moraleja = predicciones
+    prompt = f"Escribe un cuento para niños del tipo {tipo_cuento}. Los personajes principales son {personajes}. El escenario es {escenario}. La moraleja del cuento debe ser {moraleja}."
+    return prompt
+
+def generar_prompt_imagen(predicciones):
+    tipo_cuento, personajes, escenario, moraleja = predicciones
+    prompt = f"Genera una imagen para niños con los personajes {personajes} en el esenario {escenario}. En la imagen se debe ver algo que refleje la moraleja'{moraleja}'."
+    return prompt
+
+@app.route('/api/generar-prompt', methods=['POST'])
+def generar_prompt():
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data:
+            return jsonify({'error': 'No se proporcionó ningún mensaje'}), 400
+
+        message = data['message']
+        
+        # Preprocesar el mensaje de entrada
+        preprocessed_message = preprocess_text(message)
+        
+        # Predecir características del cuento con el modelo
+        predicciones = pipeline.predict([preprocessed_message])[0]
+        
+        #Generar el prompt basado en las predicciones
+        prompt = generar_prompt_cuento(predicciones)
+        
+        return jsonify({
+            'preprocessed_message': preprocessed_message,
+            'predicciones': {
+                'tipo_cuento': predicciones[0],
+                'personajes': predicciones[1],
+                'escenario': predicciones[2],
+                'moraleja': predicciones[3]
+            },
+            'prompt': prompt
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 #Api para Audio-Text
 @app.route('/api/transcribe', methods=['POST'])
@@ -88,7 +148,7 @@ def llama3():
         url = 'https://api.aimlapi.com/chat/completions'
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer 97304204becd4c15b50434f26b8f5d5a' 
+            'Authorization': f'Bearer {api_key}'
 
         }
         payload = {
@@ -123,20 +183,34 @@ def chat_gpt():
             return jsonify({'error': 'No message provided'}), 400
 
         message = data['message']
+
+        print("MENSAJE: ", message)
         
-        def chat_gpt_api(message):
+        # Preprocesar el mensaje de entrada
+        preprocessed_message = preprocess_text(message)
+        
+        # Predecir características del cuento con el modelo
+        predicciones = pipeline.predict([preprocessed_message])[0]
+        
+        # Generar el prompt basado en las predicciones
+        prompt = generar_prompt_cuento(predicciones)
+
+        # Mostrar el texto preprocesado en la consola
+        print("Prompt cuento:", prompt)
+
+        def chat_gpt_api(prompt):
             try:
                 url = 'https://api.openai.com/v1/chat/completions'
                 headers = {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer sk-None-pZvhT36Lo37E34AZP0ZZT3BlbkFJm5LRgULNtRF4ufYykAXu'
+                    'Authorization': f'Bearer {api_key}'
                 }
                 payload = {
                     'model': 'gpt-3.5-turbo',
                     'messages': [
                         {
                             'role': 'user',
-                            'content': message
+                            'content': prompt
                         }
                     ],
                     'max_tokens': 100
@@ -156,7 +230,7 @@ def chat_gpt():
             except Exception as e:
                 return f'Error en la solicitud a la API: {str(e)}'
                 
-        response_text = chat_gpt_api(message)
+        response_text = chat_gpt_api(prompt)
         return jsonify({'response': response_text})
 
     except Exception as e:
@@ -179,10 +253,23 @@ os.makedirs(image_directory, exist_ok=True)
 def generate_image():
     try:
         data = request.get_json()
-        prompt = data.get('prompt')
+        if not data or 'message' not in data:
+            return jsonify({'error': 'No message provided'}), 400
 
-        if not prompt:
-            return jsonify({'error': 'Falta la descripción de la imagen'}), 400
+        message = data['message']
+        
+        print("mensaje: ", message)
+        
+        # Preprocesar el mensaje de entrada
+        preprocessed_message = preprocess_text(message)
+        
+        # Predecir características del cuento con el modelo
+        predicciones = pipeline.predict([preprocessed_message])[0]
+        
+        # Generar el prompt basado en las predicciones
+        prompt = generar_prompt_imagen(predicciones)
+
+        print("Prompt imagen:", prompt)
 
         # Hacer una solicitud a la API de OpenAI para generar una imagen
         response = requests.post(
@@ -301,4 +388,3 @@ def get_chat_history():
 if __name__ == '__main__':
     app.run(debug=True)
     # app.run(host='192.168.0.101', port=5000, debug=True)
-
